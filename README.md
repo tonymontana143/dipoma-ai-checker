@@ -1,0 +1,1 @@
+# dipoma-ai-checker

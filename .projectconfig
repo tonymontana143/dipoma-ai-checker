@@ -1,0 +1,65 @@
+# Configuration for Toxic Comment Detection Project
+
+[project]
+name = "Toxic Comment Detection for Social Media"
+description = "BERT-based toxic comment detection using RuBERT for Russian language"
+version = "1.0.0"
+author = "Your Name"
+thesis_topic = "Development of toxic comment detection methods for social media platforms"
+
+[model]
+# Using RuBERT for Russian language support
+pretrained_model = "DeepPavlov/rubert-base-cased"
+max_sequence_length = 128
+batch_size = 8
+learning_rate = 2e-5
+epochs = 3
+warmup_steps = 500
+weight_decay = 0.01
+
+[dataset]
+# Russian dataset with toxic comments
+dataset_file = "labeled.csv"
+text_column = "comment"
+label_column = "toxic"
+train_size = 0.8
+validation_size = 0.2
+test_size = 0
+max_samples = 50000
+
+[training]
+evaluation_strategy = "epoch"
+save_strategy = "epoch"
+logging_steps = 100
+save_total_limit = 3
+metric_name = "f1"
+greater_is_better = true
+
+[paths]
+model_output = "./toxic_comment_model"
+results_dir = "./results"
+logs_dir = "./logs"
+data_raw = "./data/raw"
+data_processed = "./data/processed"
+
+[categories]
+# For binary classification (toxic/non-toxic)
+num_labels = 1
+problem_type = "single_label_classification"
+
+[evaluation_metrics]
+# Metrics to track during training
+- accuracy
+- f1
+- roc_auc
+
+[hardware]
+# GPU recommended but CPU is supported
+use_gpu = true
+device = "cuda"  # or "cpu"
+
+[notes]
+- Dataset contains Russian language comments
+- Use RuBERT model for better performance on Russian text
+- Adjust batch_size if OOM errors occur
+- Training time depends on hardware (GPU: 15-30 min, CPU: 1-2 hours)

@@ -6,6 +6,7 @@ ENV/
 
 # Модели (слишком большие)
 toxic_comment_model/
+rubert_model/
 results/
 checkpoint*/
 

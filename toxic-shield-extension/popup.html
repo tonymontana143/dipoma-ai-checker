@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ToxicShield Universal</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 360px;
+      min-height: 480px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    .header {
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .logo {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      color: white;
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+    }
+
+    .content {
+      padding: 20px;
+    }
+
+    .stats-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #667eea;
+      margin-bottom: 4px;
+    }
+
+    .stat-value.blocked {
+      color: #ff6b6b;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .control-group {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .control-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .control-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      background: #ccc;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .toggle-switch.active {
+      background: #667eea;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-switch.active .toggle-slider {
+      transform: translateX(24px);
+    }
+
+    .slider-container {
+      margin-top: 8px;
+    }
+
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #6c757d;
+    }
+
+    .slider-value {
+      font-weight: 600;
+      color: #667eea;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: #e9ecef;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .api-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Monaco', 'Courier New', monospace;
+      margin-top: 8px;
+    }
+
+    .api-input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f8f9fa;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background: #e9ecef;
+      transform: translateY(-2px);
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-left: 8px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-active {
+      background: #51cf66;
+    }
+
+    .status-inactive {
+      background: #ff6b6b;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .footer {
+      padding: 16px;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .footer a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🛡️</div>
+    <h1>ToxicShield Universal</h1>
+    <p class="subtitle">Защита от токсичного контента</p>
+  </div>
+
+  <div class="content">
+    <!-- Статистика -->
+    <div class="stats-card">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value" id="checkedCount">0</div>
+          <div class="stat-label">Проверено</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value blocked" id="blockedCount">0</div>
+          <div class="stat-label">Заблокировано</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Управление -->
+    <div class="control-group">
+      <div class="control-row">
+        <div class="control-label">
+          Защита
+          <span class="status-indicator" id="statusIndicator"></span>
+        </div>
+        <div class="toggle-switch" id="toggleSwitch">
+          <div class="toggle-slider"></div>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div style="width: 100%;">
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Чувствительность</span>
+              <span class="slider-value" id="thresholdValue">15%</span>
+            </div>
+            <input type="range" id="thresholdSlider" min="5" max="95" value="15" step="5">
+          </div>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div style="width: 100%;">
+          <div class="control-label" style="margin-bottom: 8px;">API URL</div>
+          <input type="text" class="api-input" id="apiUrl" placeholder="http://localhost:8000/api/check">
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопки действий -->
+    <div class="button-group">
+      <button class="btn btn-primary" id="scanBtn">🔍 Сканировать</button>
+      <button class="btn btn-secondary" id="resetBtn">🔄 Сброс</button>
+    </div>
+
+    <!-- Список обнаруженных элементов -->
+    <div style="margin-top: 16px;" id="toxicListContainer">
+      <div style="background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e9ecef;">
+          <div style="font-weight: 600; font-size: 13px; color: #333;">
+            🚨 Найдено токсичных
+          </div>
+          <button id="clearListBtn" style="background: none; border: none; color: #999; cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 3px; transition: all 0.2s;" title="Очистить список">
+            ✕
+          </button>
+        </div>
+        <div id="toxicElementsList" style="max-height: 250px; overflow-y: auto; padding: 0;">
+          <!-- Элементы добавляются здесь -->
+        </div>
+        <div id="emptyToxicList" style="padding: 16px; text-align: center; color: #6c757d; font-size: 12px;">
+          Токсичных элементов не найдено
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Поддерживает русский, казахский, английский</p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

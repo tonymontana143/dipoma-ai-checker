@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Обучение BERT модели для детекции токсичных комментариев (Русский язык)
+Обучение многоязычной BERT модели для детекции токсичных комментариев (Русский + Казахский)
 Тема дипломной работы: Development of toxic comment detection methods for social media platforms
+
+Модель: XLM-RoBERTa (Facebook/Multilingual BERT) - поддерживает 100+ языков
 """
 
 import os
@@ -13,22 +15,6 @@ import warnings
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, hamming_loss
-
-# Скачать модель если её нет
-def ensure_model_downloaded():
-    """Проверяет наличие модели, если нет - скачивает"""
-    model_dir = './toxic_comment_model'
-    if not (os.path.isdir(model_dir) and os.path.isfile(os.path.join(model_dir, 'config.json'))):
-        print("📥 Модель не найдена. Скачиваю с Hugging Face Hub...")
-        try:
-            from download_model import download_model
-            download_model()
-        except ImportError:
-            print("⚠️ Не могу найти download_model.py. Запустите:")
-            print("   python download_model.py")
-            sys.exit(1)
-
-ensure_model_downloaded()
 
 from transformers import (
     AutoTokenizer,
@@ -50,23 +36,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Конфигурация модели (для русского языка)
+# Конфигурация модели
 CONFIG = {
-    'model_name': 'DeepPavlov/rubert-base-cased',  # Русский BERT
+    'model_name': os.getenv('MODEL_NAME', 'xlm-roberta-base'),
     'max_length': 128,
     'batch_size': 8,
     'epochs': 3,
     'learning_rate': 2e-5,
     'num_labels': 2,  # Бинарная классификация: 0=non-toxic, 1=toxic
     'random_state': 42,
-    'max_samples': None  # Можно ограничить через переменную окружения MAX_SAMPLES
+    'max_samples': None,  # Можно ограничить через переменную окружения MAX_SAMPLES
+    'data_mode': os.getenv('DATA_MODE', 'mix')  # ru | kz | mix (по-умолчанию смешанный)
 }
 
 # Для бинарной классификации (только один столбец 'toxic')
 LABEL_COLUMNS = ['toxic']
 
 print("\n" + "="*80)
-print("🚀 Детекция токсичных комментариев для социальных медиа (RU)")
+print("🚀 Многоязычная детекция токсичных комментариев (RU + KZ, XLM-RoBERTa)")
 print("="*80)
 
 
@@ -79,16 +66,37 @@ def load_data():
     """
     print("\n📊 Загрузка данных...")
     
-    # Использовать labeled.csv (русский датасет)
+    data_mode = CONFIG.get('data_mode', 'ru').lower()
+
+    # Загрузка RU датасета
+    df_ru = None
     if os.path.exists('labeled.csv'):
-        df = pd.read_csv('labeled.csv')
-        print(f"✓ Загружено {len(df)} комментариев из labeled.csv")
+        df_ru = pd.read_csv('labeled.csv')
+        print(f"✓ Загружено {len(df_ru)} комментариев из labeled.csv")
     elif os.path.exists('train.csv'):
-        df = pd.read_csv('train.csv')
-        print(f"✓ Загружено {len(df)} комментариев из train.csv")
+        df_ru = pd.read_csv('train.csv')
+        print(f"✓ Загружено {len(df_ru)} комментариев из train.csv")
+
+    # Загрузка KZ датасета (переведенный)
+    df_kz = None
+    if os.path.exists('labeled_kz.csv'):
+        df_kz = pd.read_csv('labeled_kz.csv')
+        print(f"✓ Загружено {len(df_kz)} комментариев из labeled_kz.csv")
+
+    if data_mode == 'kz':
+        if df_kz is None:
+            raise FileNotFoundError("labeled_kz.csv не найден. Сначала запустите translate_to_kz.py")
+        df = df_kz
+    elif data_mode == 'mix':
+        if df_ru is None or df_kz is None:
+            raise FileNotFoundError("Для режима mix нужны labeled.csv и labeled_kz.csv")
+        df = pd.concat([df_ru, df_kz], ignore_index=True)
+        print(f"✓ Используется смешанный датасет: {len(df)} комментариев")
     else:
-        print("⚠️ Файлы labeled.csv и train.csv не найдены!")
-        raise FileNotFoundError("Датасет не найден")
+        if df_ru is None:
+            print("⚠️ Файлы labeled.csv и train.csv не найдены!")
+            raise FileNotFoundError("Датасет не найден")
+        df = df_ru
     
     # Опциональная подвыборка для ускорения (например, MAX_SAMPLES=2000)
     max_samples_env = os.getenv("MAX_SAMPLES")
@@ -251,13 +259,9 @@ def train_model():
     X_train, X_val, y_train, y_val = preprocess_data(texts, labels)
     
     # 3. Создать токенизатор
-    model_path = './toxic_comment_model'
-    use_saved_model = os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, 'config.json'))
-
     print("🔤 Инициализация токенизатора...")
-    tokenizer_source = model_path if use_saved_model else CONFIG['model_name']
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
-    print(f"✓ Токенизатор загружен: {tokenizer_source}")
+    tokenizer = AutoTokenizer.from_pretrained(CONFIG['model_name'])
+    print(f"✓ Токенизатор загружен: {CONFIG['model_name']}")
     
     # 4. Создать датасеты
     train_dataset = create_dataset(X_train, y_train, tokenizer)
@@ -265,13 +269,12 @@ def train_model():
     
     # 5. Загрузить модель
     print("\n📥 Загрузка модели...")
-    model_source = model_path if use_saved_model else CONFIG['model_name']
     model = AutoModelForSequenceClassification.from_pretrained(
-        model_source,
+        CONFIG['model_name'],
         num_labels=CONFIG['num_labels'],
         problem_type="single_label_classification"
     )
-    print(f"✓ Модель загружена: {model_source}")
+    print(f"✓ Модель загружена: {CONFIG['model_name']}")
     
     # Перенести на GPU если доступен
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

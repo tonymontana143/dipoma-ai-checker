@@ -1,6 +1,0 @@
-#!/home/u00062977/personal/dipoma-ai-checker/toxic-api/venv_local/bin/python3
-import sys
-from watchfiles.cli import cli
-if __name__ == '__main__':
-    sys.argv[0] = sys.argv[0].removesuffix('.exe')
-    sys.exit(cli())

@@ -32,6 +32,19 @@ let scannedUrls = {}; // { url: { hash: true, ... } }
 // Список найденных токсичных элементов
 let toxicElements = [];
 
+// Кэш токсичных хэшей для повторного применения блюра при виртуальном скроллинге
+// { hash -> { score, type, text } }
+const toxicHashCache = new Map();
+
+// Дебаунс для scroll handler
+let scrollDebounceTimer = null;
+
+// Сканируем только на активной (видимой) вкладке.
+// Это убирает лишние запросы с фоновых табов и снижает 429.
+function isActiveVisibleTab() {
+  return document.visibilityState === 'visible';
+}
+
 // Простой хеш для текста (для отслеживания заблюренных элементов)
 function simpleHash(str) {
   let hash = 0;
@@ -101,7 +114,13 @@ function restoreBlurredElements() {
 // Применение блюра без повторной проверки (для восстановления из кэша)
 function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
   const target = pickBestBlurTarget(element);
-  if (!target || processedElements.has(target)) {
+  if (!target) return;
+  
+  // Если overlay уже есть - пропускаем
+  if (target.querySelector('.toxic-overlay')) return;
+  
+  // Если уже заблюрен и имеет overlay - пропускаем
+  if (target.classList.contains('toxic-blurred') && target.querySelector('.toxic-overlay')) {
     return;
   }
 
@@ -115,9 +134,17 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
 
   processedElements.add(target);
   if (target !== element) processedElements.add(element);
-  // Отмечаем и оригинальный элемент чтобы повторный скан его пропустил
-  if (target !== element) processedElements.add(element);
   config.blockedCount++;
+  
+  // Добавляем в кэш для виртуального скроллинга
+  const textHash = simpleHash(text);
+  if (!toxicHashCache.has(textHash)) {
+    toxicHashCache.set(textHash, {
+      score: toxicityScore,
+      type: elementType,
+      text: text
+    });
+  }
 
   // Добавляем класс для стилизации
   target.classList.add('toxic-blurred');
@@ -125,7 +152,6 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
   // Создаем overlay с кнопкой toggle
   const overlay = document.createElement('div');
   overlay.className = 'toxic-overlay';
-  const textHash = simpleHash(text);
   overlay.setAttribute('data-hash', textHash);
   overlay.setAttribute('data-toxic', 'true');
   
@@ -143,11 +169,19 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
     if (isRevealed) {
       target.classList.remove('toxic-blurred');
       target.classList.add('toxic-revealed');
+      target.querySelectorAll('.toxic-blurred').forEach((el) => {
+        el.classList.remove('toxic-blurred');
+        el.classList.add('toxic-revealed');
+      });
       toggleBtn.classList.add('revealed');
       toggleBtn.setAttribute('title', 'Скрыть токсичный контент');
     } else {
       target.classList.add('toxic-blurred');
       target.classList.remove('toxic-revealed');
+      target.querySelectorAll('.toxic-revealed').forEach((el) => {
+        el.classList.remove('toxic-revealed');
+        el.classList.add('toxic-blurred');
+      });
       toggleBtn.classList.remove('revealed');
       toggleBtn.setAttribute('title', 'Показать токсичный контент');
     }
@@ -472,6 +506,13 @@ function blurElement(element, toxicityScore) {
     type: elementType
   };
   
+  // Сохраняем в кэш для виртуального скроллинга
+  toxicHashCache.set(textHash, {
+    score: toxicityScore,
+    type: elementType,
+    text: text
+  });
+  
   // Сохраняем в localStorage для восстановления при возврате на страницу
   try {
     const cacheKey = 'toxicshield_blurred_' + pageUrl;
@@ -503,11 +544,19 @@ function blurElement(element, toxicityScore) {
     if (isRevealed) {
       target.classList.remove('toxic-blurred');
       target.classList.add('toxic-revealed');
+      target.querySelectorAll('.toxic-blurred').forEach((el) => {
+        el.classList.remove('toxic-blurred');
+        el.classList.add('toxic-revealed');
+      });
       toggleBtn.classList.add('revealed');
       toggleBtn.setAttribute('title', 'Скрыть токсичный контент');
     } else {
       target.classList.add('toxic-blurred');
       target.classList.remove('toxic-revealed');
+      target.querySelectorAll('.toxic-revealed').forEach((el) => {
+        el.classList.remove('toxic-revealed');
+        el.classList.add('toxic-blurred');
+      });
       toggleBtn.classList.remove('revealed');
       toggleBtn.setAttribute('title', 'Показать токсичный контент');
     }
@@ -752,6 +801,11 @@ function pulseScanTarget(element) {
 
 // Сканирование страницы
 async function scanPage() {
+  if (!isActiveVisibleTab()) {
+    // Не сканируем фоновые вкладки
+    return;
+  }
+
   if (!config.enabled) {
     console.log('[ToxicShield] Scanner disabled');
     return;
@@ -834,7 +888,10 @@ async function scanPage() {
   let processedCount = 0;
   let skippedCount = 0;
   let toxicFoundCount = 0;
-  const batchSize = 4; // Проверяем небольшими батчами, чтобы не бить rate limit
+  // ~4 запроса/сек (2 запроса каждые 500мс) => ~240/мин на вкладку,
+  // что безопаснее для backend лимита 300/мин.
+  const batchSize = 2;
+  const interBatchDelayMs = 500;
 
   updateScanHud({
     status: 'Сканирую контент…',
@@ -891,7 +948,7 @@ async function scanPage() {
 
     // Небольшая задержка между батчами
     if (i + batchSize < filteredElements.length) {
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, interBatchDelayMs));
     }
   }
 
@@ -932,6 +989,7 @@ function startObserver() {
 
   observer = new MutationObserver((mutations) => {
     if (!config.enabled) return;
+    if (!isActiveVisibleTab()) return;
 
     let hasNewContent = false;
     
@@ -968,6 +1026,69 @@ function startObserver() {
   });
 
   console.log('[ToxicShield] MutationObserver started');
+}
+
+// Обработчик скролла для восстановления блюра на виртуальных списках (Threads, Twitter и т.д.)
+function handleScrollReblur() {
+  if (!config.enabled || !isActiveVisibleTab()) return;
+  if (toxicHashCache.size === 0) return;
+  
+  // Находим все текстовые элементы в видимой области
+  const elements = getTextElements();
+  let reblurredCount = 0;
+  
+  for (const element of elements) {
+    // Пропускаем если уже заблюрено и имеет overlay
+    if (element.classList?.contains('toxic-blurred') && element.querySelector?.('.toxic-overlay')) {
+      continue;
+    }
+    // Пропускаем revealed (пользователь специально открыл)
+    if (element.classList?.contains('toxic-revealed')) {
+      continue;
+    }
+    
+    const text = getCleanText(element);
+    if (!text) continue;
+    
+    const textHash = simpleHash(text);
+    
+    // Проверяем есть ли этот хэш в кэше токсичных
+    if (toxicHashCache.has(textHash)) {
+      const cached = toxicHashCache.get(textHash);
+      
+      // Проверяем что это точно тот же текст (коллизии хэшей)
+      if (cached.text !== text) continue;
+      
+      // Проверяем что нет overlay (не был уже обработан)
+      if (element.querySelector?.('.toxic-overlay')) continue;
+      
+      const target = pickBestBlurTarget(element);
+      if (!target) continue;
+      if (target.querySelector('.toxic-overlay')) continue;
+      
+      console.log('[ToxicShield] Re-applying blur after scroll:', text.substring(0, 30) + '...');
+      applyBlurWithoutCheck(element, cached.score, cached.type, text);
+      reblurredCount++;
+    }
+  }
+  
+  if (reblurredCount > 0) {
+    console.log(`[ToxicShield] Re-blurred ${reblurredCount} elements after scroll`);
+  }
+}
+
+// Запуск слушателя скролла
+function startScrollListener() {
+  window.addEventListener('scroll', () => {
+    if (scrollDebounceTimer) {
+      clearTimeout(scrollDebounceTimer);
+    }
+    scrollDebounceTimer = setTimeout(() => {
+      handleScrollReblur();
+    }, 300); // Дебаунс 300мс
+  }, { passive: true });
+  
+  console.log('[ToxicShield] Scroll listener started for virtual scrolling sites');
 }
 
 // Обработчик сообщений от popup
@@ -1037,6 +1158,10 @@ browser_api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Отслеживание изменений URL для SPA (Instagram, Twitter, etc.)
 let lastUrl = location.href;
 function checkUrlChange() {
+  if (!isActiveVisibleTab()) {
+    return;
+  }
+
   const currentUrl = location.href;
   if (currentUrl !== lastUrl) {
     console.log('[ToxicShield] URL changed:', lastUrl, '→', currentUrl);
@@ -1056,6 +1181,16 @@ function checkUrlChange() {
 // Проверяем изменения URL каждые 2 секунды (было 500мс, теперь медленнее)
 setInterval(checkUrlChange, 2000);
 
+// Когда вкладка снова становится активной/видимой — делаем мягкий перескан.
+document.addEventListener('visibilitychange', () => {
+  if (!config.enabled) return;
+  if (!isActiveVisibleTab()) return;
+
+  setTimeout(() => {
+    scanPage();
+  }, 250);
+});
+
 // Инициализация
 async function init() {
   console.log('[ToxicShield] Initializing on:', window.location.href);
@@ -1069,11 +1204,13 @@ async function init() {
         console.log('[ToxicShield] DOM loaded, starting scan...');
         scanPage();
         startObserver();
+        startScrollListener();
       });
     } else {
       console.log('[ToxicShield] DOM already loaded, starting scan...');
       await scanPage();
       startObserver();
+      startScrollListener();
     }
   } else {
     console.log('[ToxicShield] Extension is disabled');

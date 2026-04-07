@@ -14,10 +14,10 @@
 .toxic-revealed {
   opacity: 1 !important;
   filter: none !important;
-  border: 2px solid #51cf66 !important;
-  padding: 4px !important;
-  border-radius: 6px !important;
-  background: rgba(81, 207, 102, 0.05) !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
 }
 
 /* Overlay с предупреждением */

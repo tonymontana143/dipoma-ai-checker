@@ -2,9 +2,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from openai import OpenAI
+from openai import AsyncOpenAI
 import os
 import logging
+import asyncio
+import hashlib
 from typing import Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -62,6 +64,27 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 client = None
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
 MODEL_NAME = "gpt-4o-mini"
+
+# Semaphore: max 10 concurrent OpenAI calls
+openai_semaphore = asyncio.Semaphore(10)
+
+# LRU cache: хранит до 500 результатов, ключ = hash(text)
+_toxicity_cache: dict[str, tuple[bool, float]] = {}
+CACHE_MAX_SIZE = 500
+
+
+def _cache_get(text: str) -> Optional[tuple[bool, float]]:
+    key = hashlib.md5(text.encode()).hexdigest()
+    return _toxicity_cache.get(key)
+
+
+def _cache_set(text: str, result: tuple[bool, float]) -> None:
+    if len(_toxicity_cache) >= CACHE_MAX_SIZE:
+        # Удаляем первые 50 записей (FIFO)
+        for k in list(_toxicity_cache.keys())[:50]:
+            del _toxicity_cache[k]
+    key = hashlib.md5(text.encode()).hexdigest()
+    _toxicity_cache[key] = result
 TOXIC_KEYWORDS = [
     'идиот', 'дурак', 'тупой', 'тупая', 'тупое', 'ақымақ', 'сала',  # Kazakh/Russian insults
     'stupid', 'idiot', 'dumb', 'hate', 'kill',  # English insults
@@ -119,34 +142,41 @@ class RootResponse(BaseModel):
 # MODEL LOADING
 # ============================================================================
 def load_model():
-    """Initialize OpenAI API"""
+    """Initialize AsyncOpenAI client"""
     global client
     try:
         logger.info("🚀 Initializing OpenAI API...")
-        print("🚀 Initializing OpenAI API...")
-        
-        client = OpenAI(api_key=OPENAI_API_KEY)
-        
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         logger.info("✅ OpenAI API initialized successfully!")
-        print("✅ OpenAI API initialized successfully!")
         return True
     except Exception as e:
         logger.error(f"❌ Error initializing OpenAI: {e}")
-        print(f"❌ Error initializing OpenAI: {e}")
         client = None
         return False
 
 
-def check_toxicity_chatgpt(text: str) -> tuple[bool, float]:
-    """Check toxicity using ChatGPT API"""
-    try:
-        logger.info(f"Sending request to ChatGPT for: {text[:50]}...")
-        
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": "You are a toxicity detection assistant. Analyze comments and determine if they are toxic, offensive, or contain hate speech. Consider cultural context in Russian, Kazakh, and English languages. Be strict about insults, slurs, and hateful language."},
-                {"role": "user", "content": f"""Analyze if this comment is toxic:
+async def check_toxicity_chatgpt(text: str) -> tuple[bool, float]:
+    """Check toxicity using ChatGPT API (async, with semaphore + cache)"""
+    # 1. Проверяем кэш
+    cached = _cache_get(text)
+    if cached is not None:
+        logger.info(f"Cache hit for: {text[:50]}")
+        return cached
+
+    # 2. Семафор: максимум 10 параллельных вызовов к OpenAI
+    async with openai_semaphore:
+        # Проверяем кэш повторно (другой запрос мог уже записать)
+        cached = _cache_get(text)
+        if cached is not None:
+            return cached
+
+        try:
+            logger.info(f"OpenAI request: {text[:50]}...")
+            response = await client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": "You are a toxicity detection assistant. Analyze comments and determine if they are toxic, offensive, or contain hate speech. Consider cultural context in Russian, Kazakh, and English languages. Be strict about insults, slurs, and hateful language."},
+                    {"role": "user", "content": f"""Analyze if this comment is toxic:
 
 Comment: "{text}"
 
@@ -155,24 +185,20 @@ Answer with ONLY ONE lowercase word:
 - safe (if it's normal, neutral, or polite)
 
 Your answer:"""}
-            ],
-            temperature=0.3,
-            max_tokens=10
-        )
-        
-        answer = response.choices[0].message.content.strip().lower()
-        
-        logger.info(f"ChatGPT response: {answer}")
-        
-        if "toxic" in answer:
-            return True, 0.9
-        else:
-            return False, 0.1
-            
-    except Exception as e:
-        logger.error(f"ChatGPT API error: {e}")
-        # Fallback to keyword detection
-        return check_toxicity_fallback(text)
+                ],
+                temperature=0.3,
+                max_tokens=10
+            )
+            answer = response.choices[0].message.content.strip().lower()
+            logger.info(f"OpenAI response: {answer}")
+            result = (True, 0.9) if "toxic" in answer else (False, 0.1)
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            result = check_toxicity_fallback(text)
+
+        # 3. Сохраняем в кэш
+        _cache_set(text, result)
+        return result
 
 
 def check_toxicity_fallback(text: str) -> tuple[bool, float]:
@@ -216,7 +242,7 @@ async def health():
     return HealthResponse(
         status="ok",
         model=MODEL_NAME,
-        device="cloud"
+        device=f"cloud | cache={len(_toxicity_cache)}/{CACHE_MAX_SIZE} | semaphore={openai_semaphore._value}/10"
     )
 
 
@@ -245,7 +271,7 @@ async def check_comment(request: Request, comment: CommentRequest):
         
         # Use ChatGPT API
         if client is not None:
-            is_toxic, toxic_score = check_toxicity_chatgpt(text)
+            is_toxic, toxic_score = await check_toxicity_chatgpt(text)
             logger.info(f"ChatGPT result: is_toxic={is_toxic}, score={toxic_score:.2f}")
         else:
             logger.warning("API client not available, using fallback keyword detection")

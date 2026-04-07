@@ -114,6 +114,9 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
   }
 
   processedElements.add(target);
+  if (target !== element) processedElements.add(element);
+  // Отмечаем и оригинальный элемент чтобы повторный скан его пропустил
+  if (target !== element) processedElements.add(element);
   config.blockedCount++;
 
   // Добавляем класс для стилизации
@@ -298,10 +301,14 @@ function getCleanText(element) {
   const foundText = findTextInChildren(clone);
   if (foundText) return foundText;
   
-  // Fallback - берём весь textContent но ограничиваем длину
+  // Fallback — только если элемент простой (не контейнер с несколькими блоками)
   const fallbackText = clone.textContent?.trim();
-  if (fallbackText && fallbackText.length >= 3) {
-    return fallbackText.substring(0, 500);
+  if (fallbackText && fallbackText.length >= 3 && fallbackText.length <= 200) {
+    // Не берём текст если он содержит несколько строк (это контейнер)
+    const lines = fallbackText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    if (lines.length <= 1) {
+      return fallbackText;
+    }
   }
   
   return '';
@@ -357,8 +364,24 @@ function pickBestBlurTarget(element) {
   let bestArea = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
-    const directText = getDirectText(candidate);
-    if (directText.length < 10) continue;
+    if (processedElements.has(candidate)) continue;
+    if (candidate.classList?.contains('toxic-overlay')) continue;
+
+    // Проверяем прямой текст
+    let text = getDirectText(candidate);
+
+    // Если прямого текста нет — проверяем один уровень вложенности
+    if (text.length < 10) {
+      const clone = candidate.cloneNode(true);
+      clone.querySelectorAll('.toxic-overlay').forEach(el => el.remove());
+      text = Array.from(clone.childNodes)
+        .filter(n => n.nodeType === Node.TEXT_NODE)
+        .map(n => n.textContent?.trim() || '')
+        .join(' ')
+        .trim();
+    }
+
+    if (text.length < 10) continue;
 
     const rect = candidate.getBoundingClientRect();
     if (rect.width < 20 || rect.height < 10) continue;
@@ -370,7 +393,15 @@ function pickBestBlurTarget(element) {
     }
   }
 
-  return best || element;
+  // Не возвращаем сам элемент как fallback если он слишком большой
+  if (!best) {
+    const rect = element.getBoundingClientRect();
+    const viewportArea = Math.max(window.innerWidth * window.innerHeight, 1);
+    if ((rect.width * rect.height) > viewportArea * 0.1) return null;
+    return element;
+  }
+
+  return best;
 }
 
 // Сохранение найденного токсичного элемента
@@ -816,8 +847,16 @@ async function scanPage() {
     const batch = filteredElements.slice(i, i + batchSize);
     
     await Promise.all(batch.map(async (element) => {
-      // Пропускаем уже обработанные
+      // Пропускаем уже обработанные (проверяем и element, и его target)
       if (processedElements.has(element)) {
+        skippedCount++;
+        return;
+      }
+      // Пропускаем если элемент уже заблюрен (из восстановления кэша)
+      if (element.classList?.contains('toxic-blurred') ||
+          element.classList?.contains('toxic-revealed') ||
+          element.querySelector?.('.toxic-overlay')) {
+        processedElements.add(element);
         skippedCount++;
         return;
       }
@@ -898,8 +937,19 @@ function startObserver() {
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        hasNewContent = true;
-        break;
+        // Пропускаем мутации от самого расширения (overlay, HUD и т.д.)
+        const hasExternalNode = Array.from(mutation.addedNodes).some(node => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return false;
+          return (
+            !node.classList?.contains('toxic-overlay') &&
+            !node.classList?.contains('toxicshield-scan-hud') &&
+            node.id !== 'toxicshield-scan-hud'
+          );
+        });
+        if (hasExternalNode) {
+          hasNewContent = true;
+          break;
+        }
       }
     }
 

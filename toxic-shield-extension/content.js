@@ -1360,6 +1360,29 @@ document.addEventListener('visibilitychange', () => {
 // ФУНКЦИЯ ПРОВЕРКИ ВЫДЕЛЕННОГО ТЕКСТА
 // ==========================================================================
 let selectionTooltip = null;
+let selectionRequestSeq = 0;
+let activeSelectedText = '';
+
+function resetSelectionTooltipState(tooltip) {
+  if (!tooltip) return;
+  const checkBtn = tooltip.querySelector('.toxicshield-check-btn');
+  const resultDiv = tooltip.querySelector('.toxicshield-result');
+  const loadingDiv = tooltip.querySelector('.toxicshield-loading');
+  const scoreSpan = tooltip.querySelector('.toxicshield-result-score');
+  const labelSpan = tooltip.querySelector('.toxicshield-result-label');
+
+  if (checkBtn) checkBtn.style.display = 'block';
+  if (resultDiv) resultDiv.style.display = 'none';
+  if (loadingDiv) loadingDiv.style.display = 'none';
+  if (scoreSpan) {
+    scoreSpan.textContent = '';
+    scoreSpan.className = 'toxicshield-result-score';
+  }
+  if (labelSpan) {
+    labelSpan.textContent = '';
+    labelSpan.className = 'toxicshield-result-label';
+  }
+}
 
 function createSelectionTooltip() {
   if (selectionTooltip) return selectionTooltip;
@@ -1397,6 +1420,9 @@ async function handleSelectionCheck(e) {
   const loadingDiv = tooltip.querySelector('.toxicshield-loading');
   const scoreSpan = tooltip.querySelector('.toxicshield-result-score');
   const labelSpan = tooltip.querySelector('.toxicshield-result-label');
+
+  // Новый запуск проверки: увеличиваем токен, чтобы старые ответы игнорировались
+  const requestId = ++selectionRequestSeq;
   
   checkBtn.style.display = 'none';
   loadingDiv.style.display = 'block';
@@ -1404,6 +1430,12 @@ async function handleSelectionCheck(e) {
   
   try {
     const result = await checkToxicity(text);
+
+    // Если пока ждали ответ, пользователь выделил другой текст — игнорируем старый ответ
+    if (requestId !== selectionRequestSeq || text !== activeSelectedText) {
+      return;
+    }
+
     const scorePercent = Math.round(result.toxicity_score * 100);
     
     loadingDiv.style.display = 'none';
@@ -1424,6 +1456,9 @@ async function handleSelectionCheck(e) {
     saveSelectionCheck(text, result.toxicity_score, result.is_toxic);
     
   } catch (error) {
+    if (requestId !== selectionRequestSeq) {
+      return;
+    }
     console.error('[ToxicShield] Selection check error:', error);
     loadingDiv.style.display = 'none';
     checkBtn.style.display = 'block';
@@ -1451,15 +1486,7 @@ function saveSelectionCheck(text, score, isToxic) {
 
 function showSelectionTooltip(x, y) {
   const tooltip = createSelectionTooltip();
-  
-  // Reset state
-  const checkBtn = tooltip.querySelector('.toxicshield-check-btn');
-  const resultDiv = tooltip.querySelector('.toxicshield-result');
-  const loadingDiv = tooltip.querySelector('.toxicshield-loading');
-  
-  checkBtn.style.display = 'block';
-  resultDiv.style.display = 'none';
-  loadingDiv.style.display = 'none';
+  resetSelectionTooltipState(tooltip);
   
   // Position tooltip
   tooltip.style.left = `${x}px`;
@@ -1469,6 +1496,10 @@ function showSelectionTooltip(x, y) {
 
 function hideSelectionTooltip() {
   if (selectionTooltip) {
+    // Инвалидируем активные async-ответы при скрытии
+    selectionRequestSeq++;
+    activeSelectedText = '';
+    resetSelectionTooltipState(selectionTooltip);
     selectionTooltip.classList.remove('visible');
   }
 }
@@ -1483,6 +1514,12 @@ document.addEventListener('mouseup', (e) => {
     const text = selection.toString().trim();
     
     if (text && text.length >= 3 && text.length <= 500) {
+      // Новый текст: инвалидируем старые результаты
+      if (text !== activeSelectedText) {
+        selectionRequestSeq++;
+      }
+      activeSelectedText = text;
+
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       const x = rect.left + rect.width / 2;

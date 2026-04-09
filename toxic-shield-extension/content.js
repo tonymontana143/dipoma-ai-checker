@@ -56,6 +56,30 @@ function simpleHash(str) {
   return Math.abs(hash).toString(16);
 }
 
+function normalizeTextForKey(text) {
+  return (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isWhatsAppWeb() {
+  return /web\.whatsapp\.com$/i.test(window.location.hostname);
+}
+
+function getMinTextLengthForCurrentSite() {
+  // В WhatsApp много коротких реплик ("ок", "идиот", "фу" и т.д.)
+  return isWhatsAppWeb() ? 3 : 10;
+}
+
+function isExtensionUiElement(el) {
+  if (!el || typeof el.closest !== 'function') return false;
+  return Boolean(
+    el.closest('#toxicshield-scan-hud') ||
+    el.closest('.toxicshield-scan-hud') ||
+    el.closest('#toxicshield-selection-tooltip') ||
+    el.closest('.toxicshield-selection-tooltip') ||
+    el.closest('.toxic-overlay')
+  );
+}
+
 // Загрузка настроек из storage
 async function loadSettings() {
   try {
@@ -134,10 +158,9 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
 
   processedElements.add(target);
   if (target !== element) processedElements.add(element);
-  config.blockedCount++;
   
   // Добавляем в кэш для виртуального скроллинга
-  const textHash = simpleHash(text);
+  const textHash = simpleHash(normalizeTextForKey(text));
   if (!toxicHashCache.has(textHash)) {
     toxicHashCache.set(textHash, {
       score: toxicityScore,
@@ -405,6 +428,7 @@ function pickBestBlurTarget(element) {
 
   const tagsToPrefer = 'span,p,li,blockquote,h1,h2,h3,h4,h5,h6,a,strong,em';
   const candidates = [element, ...element.querySelectorAll(tagsToPrefer)];
+  const minTextLen = getMinTextLengthForCurrentSite();
 
   let best = null;
   let bestArea = Number.POSITIVE_INFINITY;
@@ -417,7 +441,7 @@ function pickBestBlurTarget(element) {
     let text = getDirectText(candidate);
 
     // Если прямого текста нет — проверяем один уровень вложенности
-    if (text.length < 10) {
+    if (text.length < minTextLen) {
       const clone = candidate.cloneNode(true);
       clone.querySelectorAll('.toxic-overlay').forEach(el => el.remove());
       text = Array.from(clone.childNodes)
@@ -427,7 +451,7 @@ function pickBestBlurTarget(element) {
         .trim();
     }
 
-    if (text.length < 10) continue;
+    if (text.length < minTextLen) continue;
 
     const rect = candidate.getBoundingClientRect();
     if (rect.width < 20 || rect.height < 10) continue;
@@ -452,15 +476,39 @@ function pickBestBlurTarget(element) {
 
 // Сохранение найденного токсичного элемента
 async function saveToxicElement(text, type, score) {
+  const normalized = normalizeTextForKey(text);
+  if (!normalized) return;
+  const hash = simpleHash(normalized);
+
   const element = {
     text: text.substring(0, 150), // Сохраняем первые 150 символов
     type: type,
     score: Math.round(score * 100),
+    count: 1,
+    hash,
     timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   };
-  
-  // Добавляем в список
-  toxicElements.push(element);
+
+  // Дедупликация: обновляем существующую запись вместо дублирования
+  const existingIdx = toxicElements.findIndex((item) => {
+    if (item.hash === hash) return true;
+    return normalizeTextForKey(item.text) === normalized;
+  });
+  if (existingIdx >= 0) {
+    const existing = toxicElements[existingIdx];
+    const updated = {
+      ...existing,
+      type: element.type,
+      score: Math.max(existing.score || 0, element.score),
+      count: (existing.count || 1) + 1,
+      timestamp: element.timestamp,
+      hash
+    };
+    toxicElements.splice(existingIdx, 1);
+    toxicElements.push(updated);
+  } else {
+    toxicElements.push(element);
+  }
   
   // Ограничиваем до последних 50 элементов
   if (toxicElements.length > 50) {
@@ -498,21 +546,29 @@ function blurElement(element, toxicityScore) {
     return;
   }
 
-  processedElements.add(target);
-  config.blockedCount++;
-  saveStats();
-  
-  // Определяем тип элемента и сохраняем
+  // Определяем тип элемента и текст до обновления счетчиков
   const elementType = detectElementType(target);
   const text = getCleanText(target);
-  saveToxicElement(text, elementType, toxicityScore);
-  
+  const normalized = normalizeTextForKey(text);
+  if (!normalized) return;
+
   // Регистрируем в кэш заблюренных элементов
   const pageUrl = window.location.href;
-  const textHash = simpleHash(text);
+  const textHash = simpleHash(normalized);
   if (!scannedUrls[pageUrl]) {
     scannedUrls[pageUrl] = {};
   }
+
+  const isFirstTimeForPage = !scannedUrls[pageUrl][textHash];
+
+  processedElements.add(target);
+  if (isFirstTimeForPage) {
+    config.blockedCount++;
+    saveStats();
+  }
+
+  saveToxicElement(text, elementType, toxicityScore);
+
   scannedUrls[pageUrl][textHash] = {
     score: toxicityScore,
     type: elementType
@@ -597,8 +653,17 @@ function blurElement(element, toxicityScore) {
 // Получение всех текстовых элементов на странице
 function getTextElements() {
   console.log('[ToxicShield] Method 1: Using CSS selectors...');
+  const minTextLen = getMinTextLengthForCurrentSite();
   
   const selectors = [
+    // WhatsApp Web (приоритетные селекторы)
+    '[data-pre-plain-text] span.selectable-text',
+    '[data-pre-plain-text] span.copyable-text',
+    '[data-pre-plain-text] div.copyable-text',
+    'div.message-in span.selectable-text',
+    'div.message-out span.selectable-text',
+    'span.selectable-text.copyable-text',
+
     // Instagram специфичные
     'article span',
     '[role="button"] + span',
@@ -656,7 +721,9 @@ function getTextElements() {
         // Исключаем скрипты, стили и уже обработанные элементы
         if (el.tagName === 'SCRIPT' || 
             el.tagName === 'STYLE' ||
+            el.closest?.('[contenteditable="true"], [role="textbox"], footer') ||
             el.classList.contains('toxic-overlay') ||
+            isExtensionUiElement(el) ||
             seenElements.has(el)) {
           return;
         }
@@ -664,7 +731,7 @@ function getTextElements() {
         // Проверяем, что элемент содержит текст
         // Проверяем текст с учётом чистоты (без вложений)
         const text = getCleanText(el);
-        if (text && text.length > 10) {
+        if (text && text.length >= minTextLen) {
           seenElements.add(el);
           elements.push(el);
         }
@@ -689,6 +756,7 @@ function getTextElements() {
 function getTextElementsUniversal() {
   const elements = [];
   const seenElements = new Set();
+  const minTextLen = getMinTextLengthForCurrentSite();
   
   // Ищем все элементы с текстом через TreeWalker
   const walker = document.createTreeWalker(
@@ -701,7 +769,9 @@ function getTextElementsUniversal() {
             node.tagName === 'STYLE' ||
             node.tagName === 'NOSCRIPT' ||
             node.tagName === 'IFRAME' ||
+            node.closest?.('[contenteditable="true"], [role="textbox"], footer') ||
             node.classList.contains('toxic-overlay') ||
+            isExtensionUiElement(node) ||
             node.classList.contains('toxic-blurred')) {
           return NodeFilter.FILTER_REJECT;
         }
@@ -728,7 +798,7 @@ function getTextElementsUniversal() {
     const text = node.textContent?.trim();
     
     // Проверяем длину текста
-    if (text && text.length >= 10 && text.length <= 5000) {
+    if (text && text.length >= minTextLen && text.length <= 5000) {
       // Проверяем что это не просто контейнер с вложенными элементами
       const childText = Array.from(node.childNodes)
         .filter(n => n.nodeType === Node.TEXT_NODE)
@@ -736,7 +806,7 @@ function getTextElementsUniversal() {
         .join(' ')
         .trim();
       
-      if (childText.length >= 10) {
+      if (childText.length >= minTextLen) {
         seenElements.add(node);
         elements.push(node);
       }
@@ -783,9 +853,28 @@ function ensureScanHud() {
 let recentToxicTexts = [];
 
 function addToxicToHud(text, score) {
+  const normalized = normalizeTextForKey(text);
+  if (!normalized) return;
+  const hash = simpleHash(normalized);
+
   const preview = text.length > 40 ? text.substring(0, 40) + '…' : text;
   const scorePercent = Math.round(score * 100);
-  recentToxicTexts.unshift({ preview, scorePercent });
+
+  const existingIdx = recentToxicTexts.findIndex((item) => item.hash === hash);
+  if (existingIdx >= 0) {
+    const existing = recentToxicTexts[existingIdx];
+    recentToxicTexts.splice(existingIdx, 1);
+    recentToxicTexts.unshift({
+      ...existing,
+      preview,
+      scorePercent: Math.max(existing.scorePercent || 0, scorePercent),
+      count: (existing.count || 1) + 1,
+      hash
+    });
+  } else {
+    recentToxicTexts.unshift({ preview, scorePercent, count: 1, hash });
+  }
+
   // Храним только последние 5
   if (recentToxicTexts.length > 5) {
     recentToxicTexts = recentToxicTexts.slice(0, 5);
@@ -820,9 +909,11 @@ function updateScanHud({ status, processed, total, toxicFound }) {
     listNode.innerHTML = recentToxicTexts.map(item => 
       `<div class="toxicshield-scan-item">` +
       `<span class="toxicshield-scan-item-score">${item.scorePercent}%</span>` +
-      `<span class="toxicshield-scan-item-text">${escapeHtml(item.preview)}</span>` +
+      `<span class="toxicshield-scan-item-text">${escapeHtml(item.preview)}${item.count > 1 ? ` <b>×${item.count}</b>` : ''}</span>` +
       `</div>`
     ).join('');
+  } else if (listNode) {
+    listNode.innerHTML = '';
   }
 
   hud.classList.add('is-visible');
@@ -891,6 +982,9 @@ async function scanPage() {
     if (!cacheRestored) {
       restoreBlurredElements();
     }
+
+    // Новый скан — очищаем live-список HUD, чтобы не копились старые элементы
+    recentToxicTexts = [];
     
     updateScanHud({ status: 'Поиск текста на странице…', processed: 0, total: 0, toxicFound: 0 });
     
@@ -943,6 +1037,7 @@ async function scanPage() {
   let processedCount = 0;
   let skippedCount = 0;
   let toxicFoundCount = 0;
+  const uniqueToxicInScan = new Set();
   // ~4 запроса/сек (2 запроса каждые 500мс) => ~240/мин на вкладку,
   // что безопаснее для backend лимита 300/мин.
   const batchSize = 5;
@@ -982,7 +1077,11 @@ async function scanPage() {
         processedCount++;
 
         if (result.is_toxic) {
-          toxicFoundCount++;
+          const toxicHash = simpleHash(normalizeTextForKey(text));
+          if (!uniqueToxicInScan.has(toxicHash)) {
+            uniqueToxicInScan.add(toxicHash);
+            toxicFoundCount++;
+          }
           console.log('[ToxicShield] Toxic content found:', {
             text: text.substring(0, 50) + '...',
             score: result.toxicity_score

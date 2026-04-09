@@ -175,23 +175,34 @@ async def check_toxicity_chatgpt(text: str) -> tuple[bool, float]:
             response = await client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
-                    {"role": "system", "content": "You are a toxicity detection assistant. Analyze comments and determine if they are toxic, offensive, or contain hate speech. Consider cultural context in Russian, Kazakh, and English languages. Be strict about insults, slurs, and hateful language."},
-                    {"role": "user", "content": f"""Analyze if this comment is toxic:
+                    {"role": "system", "content": """You are a toxicity detection assistant for social media comments.
 
-Comment: "{text}"
+TOXIC means: direct insults, slurs, hate speech, threats, harassment directed at a person or group.
 
-Answer in format: SCORE
-Where SCORE is a number from 0 to 100 representing toxicity percentage.
-- 0-20: safe, polite, neutral
-- 21-50: mildly negative, sarcasm, light criticism
-- 51-80: offensive, rude, insults
-- 81-100: highly toxic, hate speech, slurs
+NOT TOXIC (even if provocative):
+- Questions about sex/relationships (unless insulting someone)
+- ALL CAPS or stretched words (just emphasis, not toxic)
+- Clickbait, attention-grabbing text
+- Swear words used casually (not directed at someone)
+- Adult content discussions (18+ topics are not automatically toxic)
+- Sarcasm or jokes (unless clearly offensive)
+- Marketing/promotional language
+- Emotional expressions (😭, 🔥, etc.)
 
-Only respond with the number, nothing else.
+Focus ONLY on actual harassment and insults directed at individuals or groups."""},
+                    {"role": "user", "content": f"""Rate this comment's toxicity from 0 to 100:
 
-Your answer:"""}
+"{text}"
+
+ONLY give a number:
+- 0-15: safe, neutral, questions, discussions
+- 16-40: slightly rude but not offensive
+- 41-70: contains insults or offensive language
+- 71-100: hate speech, slurs, direct harassment
+
+Your number:"""}
                 ],
-                temperature=0.3,
+                temperature=0.2,
                 max_tokens=10
             )
             answer = response.choices[0].message.content.strip()
@@ -202,7 +213,7 @@ Your answer:"""}
                 score = int(answer.replace('%', '').strip())
                 score = max(0, min(100, score))  # Clamp to 0-100
                 toxic_score = score / 100.0
-                is_toxic = toxic_score > 0.5
+                is_toxic = toxic_score > 0.4  # 40%+ считается токсичным
             except ValueError:
                 # Fallback if parsing fails - check for keywords in response
                 if "toxic" in answer.lower() or answer.isdigit() and int(answer) > 50:

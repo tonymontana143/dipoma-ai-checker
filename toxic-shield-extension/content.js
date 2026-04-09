@@ -772,10 +772,24 @@ function ensureScanHud() {
       <span class="toxicshield-scan-progress">0 / 0</span>
       <span class="toxicshield-scan-toxic">Токсичных: 0</span>
     </div>
+    <div class="toxicshield-scan-list"></div>
   `;
 
   document.body.appendChild(scanHudElement);
   return scanHudElement;
+}
+
+// Список последних найденных токсичных текстов для HUD
+let recentToxicTexts = [];
+
+function addToxicToHud(text, score) {
+  const preview = text.length > 40 ? text.substring(0, 40) + '…' : text;
+  const scorePercent = Math.round(score * 100);
+  recentToxicTexts.unshift({ preview, scorePercent });
+  // Храним только последние 5
+  if (recentToxicTexts.length > 5) {
+    recentToxicTexts = recentToxicTexts.slice(0, 5);
+  }
 }
 
 function updateScanHud({ status, processed, total, toxicFound }) {
@@ -794,13 +808,30 @@ function updateScanHud({ status, processed, total, toxicFound }) {
   const progressNode = hud.querySelector('.toxicshield-scan-progress');
   const toxicNode = hud.querySelector('.toxicshield-scan-toxic');
   const barNode = hud.querySelector('.toxicshield-scan-progressbar-fill');
+  const listNode = hud.querySelector('.toxicshield-scan-list');
 
   if (statusNode) statusNode.textContent = status || 'Сканирование…';
   if (progressNode) progressNode.textContent = `${processed || 0} / ${total || 0}`;
   if (toxicNode) toxicNode.textContent = `Токсичных: ${toxicFound || 0}`;
   if (barNode) barNode.style.width = `${percent}%`;
+  
+  // Обновляем список токсичных
+  if (listNode && recentToxicTexts.length > 0) {
+    listNode.innerHTML = recentToxicTexts.map(item => 
+      `<div class="toxicshield-scan-item">` +
+      `<span class="toxicshield-scan-item-score">${item.scorePercent}%</span>` +
+      `<span class="toxicshield-scan-item-text">${escapeHtml(item.preview)}</span>` +
+      `</div>`
+    ).join('');
+  }
 
   hud.classList.add('is-visible');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function hideScanHud(delayMs = 1200) {
@@ -956,6 +987,7 @@ async function scanPage() {
             text: text.substring(0, 50) + '...',
             score: result.toxicity_score
           });
+          addToxicToHud(text, result.toxicity_score);
           blurElement(element, result.toxicity_score);
         }
       } catch (error) {

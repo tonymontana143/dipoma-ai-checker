@@ -180,18 +180,39 @@ async def check_toxicity_chatgpt(text: str) -> tuple[bool, float]:
 
 Comment: "{text}"
 
-Answer with ONLY ONE lowercase word:
-- toxic (if it contains insults, slurs, hate speech, or offensive language)
-- safe (if it's normal, neutral, or polite)
+Answer in format: SCORE
+Where SCORE is a number from 0 to 100 representing toxicity percentage.
+- 0-20: safe, polite, neutral
+- 21-50: mildly negative, sarcasm, light criticism
+- 51-80: offensive, rude, insults
+- 81-100: highly toxic, hate speech, slurs
+
+Only respond with the number, nothing else.
 
 Your answer:"""}
                 ],
                 temperature=0.3,
                 max_tokens=10
             )
-            answer = response.choices[0].message.content.strip().lower()
+            answer = response.choices[0].message.content.strip()
             logger.info(f"OpenAI response: {answer}")
-            result = (True, 0.9) if "toxic" in answer else (False, 0.1)
+            
+            # Parse score from response
+            try:
+                score = int(answer.replace('%', '').strip())
+                score = max(0, min(100, score))  # Clamp to 0-100
+                toxic_score = score / 100.0
+                is_toxic = toxic_score > 0.5
+            except ValueError:
+                # Fallback if parsing fails - check for keywords in response
+                if "toxic" in answer.lower() or answer.isdigit() and int(answer) > 50:
+                    toxic_score = 0.75
+                    is_toxic = True
+                else:
+                    toxic_score = 0.15
+                    is_toxic = False
+            
+            result = (is_toxic, toxic_score)
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             result = check_toxicity_fallback(text)

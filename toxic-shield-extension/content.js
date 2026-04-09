@@ -16,7 +16,7 @@ let config = {
 // Флаги для защиты от циклического сканирования
 let isScanning = false;
 let lastScanTime = 0;
-const MIN_SCAN_INTERVAL = 3000; // Минимум 3 секунды между сканами
+const MIN_SCAN_INTERVAL = 1500; // Минимум 1.5 секунды между сканами
 
 // Флаг что кэш уже восстановлен для текущей страницы
 let cacheRestored = false;
@@ -890,8 +890,8 @@ async function scanPage() {
   let toxicFoundCount = 0;
   // ~4 запроса/сек (2 запроса каждые 500мс) => ~240/мин на вкладку,
   // что безопаснее для backend лимита 300/мин.
-  const batchSize = 2;
-  const interBatchDelayMs = 500;
+  const batchSize = 5;
+  const interBatchDelayMs = 150;
 
   updateScanHud({
     status: 'Сканирую контент…',
@@ -1012,11 +1012,11 @@ function startObserver() {
     }
 
     if (hasNewContent) {
-      // Дебаунс: проверяем новый контент через 1200мс (было 500мс, теперь медленнее)
+      // Дебаунс: проверяем новый контент через 600мс
       clearTimeout(observer.scanTimeout);
       observer.scanTimeout = setTimeout(() => {
         scanPage();
-      }, 1200);
+      }, 600);
     }
   });
 

@@ -253,3 +253,92 @@
   min-width: 35px !important;
   text-align: center !important;
 }
+
+/* ==========================================================================
+   SELECTION TOOLTIP - проверка выделенного текста
+   ========================================================================== */
+.toxicshield-selection-tooltip {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  background: rgba(17, 24, 39, 0.95) !important;
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  transform: translateX(-50%) translateY(-5px) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.15s ease, transform 0.15s ease !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.toxicshield-selection-tooltip.visible {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+.toxicshield-check-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+  white-space: nowrap !important;
+}
+
+.toxicshield-check-btn:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 3px 12px rgba(102, 126, 234, 0.4) !important;
+}
+
+.toxicshield-loading {
+  font-size: 14px !important;
+  animation: toxicshield-spin 1s linear infinite !important;
+}
+
+@keyframes toxicshield-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.toxicshield-result {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.toxicshield-result-score {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+}
+
+.toxicshield-result-score.toxic {
+  background: rgba(255, 71, 87, 0.9) !important;
+  color: white !important;
+}
+
+.toxicshield-result-score.safe {
+  background: rgba(46, 213, 115, 0.9) !important;
+  color: white !important;
+}
+
+.toxicshield-result-label {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+.toxicshield-result-label.toxic {
+  color: #ff6b6b !important;
+}
+
+.toxicshield-result-label.safe {
+  color: #2ed573 !important;
+}

@@ -277,6 +277,189 @@
       color: rgba(255, 255, 255, 0.9);
       text-decoration: none;
     }
+
+    /* ===== TABS ===== */
+    .tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+
+    .tab-btn.active {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border-bottom: 2px solid white;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ===== ANALYTICS ===== */
+    .analytics-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .analytics-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .analytics-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .analytics-stat {
+      text-align: center;
+      padding: 10px 6px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .analytics-stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #667eea;
+    }
+
+    .analytics-stat-value.toxic {
+      color: #ff6b6b;
+    }
+
+    .analytics-stat-value.safe {
+      color: #51cf66;
+    }
+
+    .analytics-stat-label {
+      font-size: 10px;
+      color: #6c757d;
+      margin-top: 4px;
+    }
+
+    /* Toxicity bars */
+    .toxicity-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toxicity-bar-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 30px;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toxicity-bar-label {
+      font-size: 10px;
+      color: #555;
+    }
+
+    .toxicity-bar-track {
+      height: 8px;
+      background: #eee;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .toxicity-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+
+    .toxicity-bar-fill.safe { background: #51cf66; }
+    .toxicity-bar-fill.mild { background: #94d82d; }
+    .toxicity-bar-fill.medium { background: #fcc419; }
+    .toxicity-bar-fill.high { background: #ff922b; }
+    .toxicity-bar-fill.critical { background: #ff6b6b; }
+
+    .toxicity-bar-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      text-align: right;
+    }
+
+    /* Selection history */
+    .selection-history {
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .selection-empty {
+      text-align: center;
+      color: #999;
+      font-size: 11px;
+      padding: 20px 10px;
+    }
+
+    .selection-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px;
+      border-bottom: 1px solid #f1f3f5;
+      font-size: 11px;
+    }
+
+    .selection-item:last-child {
+      border-bottom: none;
+    }
+
+    .selection-score {
+      flex-shrink: 0;
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 10px;
+      color: white;
+    }
+
+    .selection-score.toxic {
+      background: #ff6b6b;
+    }
+
+    .selection-score.safe {
+      background: #51cf66;
+    }
+
+    .selection-text {
+      color: #555;
+      line-height: 1.4;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -286,7 +469,15 @@
     <p class="subtitle">Защита от токсичного контента</p>
   </div>
 
+  <!-- Табы -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="main">🏠 Главная</button>
+    <button class="tab-btn" data-tab="analytics">📊 Аналитика</button>
+  </div>
+
   <div class="content">
+    <!-- ========== TAB: MAIN ========== -->
+    <div class="tab-content active" id="tab-main">
     <!-- Статистика -->
     <div class="stats-card">
       <div class="stats-grid">
@@ -358,6 +549,79 @@
         </div>
       </div>
     </div>
+    </div> <!-- /tab-main -->
+
+    <!-- ========== TAB: ANALYTICS ========== -->
+    <div class="tab-content" id="tab-analytics">
+      <!-- Общая статистика сессии -->
+      <div class="analytics-card">
+        <h3 class="analytics-title">📈 Статистика сессии</h3>
+        <div class="analytics-stats">
+          <div class="analytics-stat">
+            <div class="analytics-stat-value" id="totalScanned">0</div>
+            <div class="analytics-stat-label">Всего проверено</div>
+          </div>
+          <div class="analytics-stat">
+            <div class="analytics-stat-value toxic" id="totalToxic">0</div>
+            <div class="analytics-stat-label">Токсичных</div>
+          </div>
+          <div class="analytics-stat">
+            <div class="analytics-stat-value safe" id="toxicPercent">0%</div>
+            <div class="analytics-stat-label">Токсичность</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Распределение по уровням токсичности -->
+      <div class="analytics-card">
+        <h3 class="analytics-title">🎯 Распределение токсичности</h3>
+        <div class="toxicity-bars">
+          <div class="toxicity-bar-row">
+            <span class="toxicity-bar-label">0-20% (безопасно)</span>
+            <div class="toxicity-bar-track">
+              <div class="toxicity-bar-fill safe" id="bar-safe" style="width: 0%"></div>
+            </div>
+            <span class="toxicity-bar-count" id="count-safe">0</span>
+          </div>
+          <div class="toxicity-bar-row">
+            <span class="toxicity-bar-label">21-40% (лёгкая)</span>
+            <div class="toxicity-bar-track">
+              <div class="toxicity-bar-fill mild" id="bar-mild" style="width: 0%"></div>
+            </div>
+            <span class="toxicity-bar-count" id="count-mild">0</span>
+          </div>
+          <div class="toxicity-bar-row">
+            <span class="toxicity-bar-label">41-60% (средняя)</span>
+            <div class="toxicity-bar-track">
+              <div class="toxicity-bar-fill medium" id="bar-medium" style="width: 0%"></div>
+            </div>
+            <span class="toxicity-bar-count" id="count-medium">0</span>
+          </div>
+          <div class="toxicity-bar-row">
+            <span class="toxicity-bar-label">61-80% (высокая)</span>
+            <div class="toxicity-bar-track">
+              <div class="toxicity-bar-fill high" id="bar-high" style="width: 0%"></div>
+            </div>
+            <span class="toxicity-bar-count" id="count-high">0</span>
+          </div>
+          <div class="toxicity-bar-row">
+            <span class="toxicity-bar-label">81-100% (критич.)</span>
+            <div class="toxicity-bar-track">
+              <div class="toxicity-bar-fill critical" id="bar-critical" style="width: 0%"></div>
+            </div>
+            <span class="toxicity-bar-count" id="count-critical">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- История проверок выделенного текста -->
+      <div class="analytics-card">
+        <h3 class="analytics-title">✋ Ручные проверки</h3>
+        <div id="selectionHistory" class="selection-history">
+          <div class="selection-empty">Выделите текст на странице и нажмите "Проверить"</div>
+        </div>
+      </div>
+    </div> <!-- /tab-analytics -->
   </div>
 
   <div class="footer">

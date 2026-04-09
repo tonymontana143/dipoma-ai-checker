@@ -1209,6 +1209,16 @@ browser_api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+
+  if (message.action === 'getSelectionHistory') {
+    try {
+      const history = JSON.parse(localStorage.getItem('toxicshield_selection_history') || '[]');
+      sendResponse({ history: history.slice(0, 20) }); // Возвращаем последние 20
+    } catch (e) {
+      sendResponse({ history: [] });
+    }
+    return true;
+  }
 });
 
 // Отслеживание изменений URL для SPA (Instagram, Twitter, etc.)
@@ -1245,6 +1255,151 @@ document.addEventListener('visibilitychange', () => {
   setTimeout(() => {
     scanPage();
   }, 250);
+});
+
+// ==========================================================================
+// ФУНКЦИЯ ПРОВЕРКИ ВЫДЕЛЕННОГО ТЕКСТА
+// ==========================================================================
+let selectionTooltip = null;
+
+function createSelectionTooltip() {
+  if (selectionTooltip) return selectionTooltip;
+  
+  selectionTooltip = document.createElement('div');
+  selectionTooltip.id = 'toxicshield-selection-tooltip';
+  selectionTooltip.className = 'toxicshield-selection-tooltip';
+  selectionTooltip.innerHTML = `
+    <button class="toxicshield-check-btn">🛡️ Проверить</button>
+    <div class="toxicshield-result" style="display: none;">
+      <span class="toxicshield-result-score"></span>
+      <span class="toxicshield-result-label"></span>
+    </div>
+    <div class="toxicshield-loading" style="display: none;">⏳</div>
+  `;
+  document.body.appendChild(selectionTooltip);
+  
+  const checkBtn = selectionTooltip.querySelector('.toxicshield-check-btn');
+  checkBtn.addEventListener('click', handleSelectionCheck);
+  
+  return selectionTooltip;
+}
+
+async function handleSelectionCheck(e) {
+  e.stopPropagation();
+  
+  const selection = window.getSelection();
+  const text = selection.toString().trim();
+  
+  if (!text || text.length < 3) return;
+  
+  const tooltip = createSelectionTooltip();
+  const checkBtn = tooltip.querySelector('.toxicshield-check-btn');
+  const resultDiv = tooltip.querySelector('.toxicshield-result');
+  const loadingDiv = tooltip.querySelector('.toxicshield-loading');
+  const scoreSpan = tooltip.querySelector('.toxicshield-result-score');
+  const labelSpan = tooltip.querySelector('.toxicshield-result-label');
+  
+  checkBtn.style.display = 'none';
+  loadingDiv.style.display = 'block';
+  resultDiv.style.display = 'none';
+  
+  try {
+    const result = await checkToxicity(text);
+    const scorePercent = Math.round(result.toxicity_score * 100);
+    
+    loadingDiv.style.display = 'none';
+    resultDiv.style.display = 'flex';
+    scoreSpan.textContent = `${scorePercent}%`;
+    
+    if (result.is_toxic) {
+      scoreSpan.className = 'toxicshield-result-score toxic';
+      labelSpan.textContent = 'Токсично';
+      labelSpan.className = 'toxicshield-result-label toxic';
+    } else {
+      scoreSpan.className = 'toxicshield-result-score safe';
+      labelSpan.textContent = 'Безопасно';
+      labelSpan.className = 'toxicshield-result-label safe';
+    }
+    
+    // Сохраняем в аналитику
+    saveSelectionCheck(text, result.toxicity_score, result.is_toxic);
+    
+  } catch (error) {
+    console.error('[ToxicShield] Selection check error:', error);
+    loadingDiv.style.display = 'none';
+    checkBtn.style.display = 'block';
+  }
+}
+
+function saveSelectionCheck(text, score, isToxic) {
+  // Сохраняем историю проверок выделенного текста
+  try {
+    const history = JSON.parse(localStorage.getItem('toxicshield_selection_history') || '[]');
+    history.unshift({
+      text: text.substring(0, 100),
+      score,
+      isToxic,
+      timestamp: Date.now(),
+      url: window.location.href
+    });
+    // Храним последние 50 проверок
+    if (history.length > 50) history.length = 50;
+    localStorage.setItem('toxicshield_selection_history', JSON.stringify(history));
+  } catch (e) {
+    console.error('[ToxicShield] Error saving selection history:', e);
+  }
+}
+
+function showSelectionTooltip(x, y) {
+  const tooltip = createSelectionTooltip();
+  
+  // Reset state
+  const checkBtn = tooltip.querySelector('.toxicshield-check-btn');
+  const resultDiv = tooltip.querySelector('.toxicshield-result');
+  const loadingDiv = tooltip.querySelector('.toxicshield-loading');
+  
+  checkBtn.style.display = 'block';
+  resultDiv.style.display = 'none';
+  loadingDiv.style.display = 'none';
+  
+  // Position tooltip
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y - 45}px`;
+  tooltip.classList.add('visible');
+}
+
+function hideSelectionTooltip() {
+  if (selectionTooltip) {
+    selectionTooltip.classList.remove('visible');
+  }
+}
+
+// Обработчик выделения текста
+document.addEventListener('mouseup', (e) => {
+  // Игнорируем клики по самому тултипу
+  if (e.target.closest('#toxicshield-selection-tooltip')) return;
+  
+  setTimeout(() => {
+    const selection = window.getSelection();
+    const text = selection.toString().trim();
+    
+    if (text && text.length >= 3 && text.length <= 500) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + window.scrollY;
+      showSelectionTooltip(x, y);
+    } else {
+      hideSelectionTooltip();
+    }
+  }, 10);
+});
+
+// Скрываем при клике вне
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#toxicshield-selection-tooltip')) {
+    hideSelectionTooltip();
+  }
 });
 
 // Инициализация

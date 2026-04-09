@@ -299,6 +299,95 @@ document.getElementById('clearListBtn').addEventListener('click', async () => {
 // Автоматическое обновление статистики каждые 2 секунды
 setInterval(updateStats, 2000);
 
+// ===== TABS =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Remove active from all tabs
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    
+    // Activate clicked tab
+    btn.classList.add('active');
+    const tabId = btn.dataset.tab;
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+    
+    // Update analytics when switching to that tab
+    if (tabId === 'analytics') {
+      updateAnalytics();
+    }
+  });
+});
+
+// ===== ANALYTICS =====
+async function updateAnalytics() {
+  try {
+    // Get stats from storage
+    const stored = await browser_api.storage.sync.get(['checkedCount', 'blockedCount', 'toxicElements']);
+    
+    const totalScanned = stored.checkedCount || 0;
+    const totalToxic = stored.blockedCount || 0;
+    const toxicPercent = totalScanned > 0 ? Math.round((totalToxic / totalScanned) * 100) : 0;
+    
+    document.getElementById('totalScanned').textContent = totalScanned;
+    document.getElementById('totalToxic').textContent = totalToxic;
+    document.getElementById('toxicPercent').textContent = `${toxicPercent}%`;
+    
+    // Update toxicity distribution bars
+    const toxicElements = stored.toxicElements || [];
+    const distribution = { safe: 0, mild: 0, medium: 0, high: 0, critical: 0 };
+    
+    toxicElements.forEach(item => {
+      const score = item.score || 0;
+      if (score <= 20) distribution.safe++;
+      else if (score <= 40) distribution.mild++;
+      else if (score <= 60) distribution.medium++;
+      else if (score <= 80) distribution.high++;
+      else distribution.critical++;
+    });
+    
+    const maxCount = Math.max(...Object.values(distribution), 1);
+    
+    Object.keys(distribution).forEach(key => {
+      const count = distribution[key];
+      const percent = (count / maxCount) * 100;
+      document.getElementById(`bar-${key}`).style.width = `${percent}%`;
+      document.getElementById(`count-${key}`).textContent = count;
+    });
+    
+    // Load selection history from localStorage via content script
+    await updateSelectionHistory();
+    
+  } catch (error) {
+    console.error('[Popup] Analytics update error:', error);
+  }
+}
+
+async function updateSelectionHistory() {
+  try {
+    const tab = await getTargetTab();
+    if (!tab?.id) return;
+    
+    const response = await browser_api.tabs.sendMessage(tab.id, { action: 'getSelectionHistory' });
+    
+    const container = document.getElementById('selectionHistory');
+    
+    if (!response?.history || response.history.length === 0) {
+      container.innerHTML = '<div class="selection-empty">Выделите текст на странице и нажмите "Проверить"</div>';
+      return;
+    }
+    
+    container.innerHTML = response.history.map(item => `
+      <div class="selection-item">
+        <span class="selection-score ${item.isToxic ? 'toxic' : 'safe'}">${Math.round(item.score * 100)}%</span>
+        <span class="selection-text">${escapeHtml(item.text)}</span>
+      </div>
+    `).join('');
+    
+  } catch (error) {
+    console.log('[Popup] Selection history skipped:', error.message);
+  }
+}
+
 // Инициализация
 loadSettings();
 updateStats();

@@ -191,6 +191,18 @@ function applyBlurWithoutCheck(element, toxicityScore, elementType, text) {
   if (computedPosition === 'static') {
     target.style.position = 'relative';
   }
+  
+  // Исправляем overflow на родителях (для WhatsApp и подобных)
+  target.style.overflow = 'visible';
+  let parent = target.parentElement;
+  for (let i = 0; i < 3 && parent; i++) {
+    const parentOverflow = window.getComputedStyle(parent).overflow;
+    if (parentOverflow === 'hidden' || parentOverflow === 'clip') {
+      parent.style.overflow = 'visible';
+    }
+    parent = parent.parentElement;
+  }
+  
   target.appendChild(overlay);
 }
 
@@ -567,6 +579,18 @@ function blurElement(element, toxicityScore) {
   if (computedPosition === 'static') {
     target.style.position = 'relative';
   }
+  
+  // Исправляем overflow на родителях (для WhatsApp и подобных)
+  target.style.overflow = 'visible';
+  let parent = target.parentElement;
+  for (let i = 0; i < 3 && parent; i++) {
+    const parentOverflow = window.getComputedStyle(parent).overflow;
+    if (parentOverflow === 'hidden' || parentOverflow === 'clip') {
+      parent.style.overflow = 'visible';
+    }
+    parent = parent.parentElement;
+  }
+  
   target.appendChild(overlay);
 }
 

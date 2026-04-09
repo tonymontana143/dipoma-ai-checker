@@ -8,6 +8,7 @@
   pointer-events: auto !important;
   transition: filter 0.3s ease !important;
   opacity: 0.6 !important;
+  overflow: visible !important;
 }
 
 /* Показанный контент */

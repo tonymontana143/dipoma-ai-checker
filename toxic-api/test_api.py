@@ -14,7 +14,7 @@ import time
 from typing import List, Tuple
 
 # Configuration
-API_URL = "http://localhost:8000"
+API_URL = "https://dipoma-ai-checker.onrender.com/api/check"
 TIMEOUT = 10  # seconds
 
 # ANSI Colors for output

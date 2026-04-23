@@ -3,10 +3,15 @@
 
 // Firefox/Chrome compatibility
 const browser_api = typeof browser !== 'undefined' ? browser : chrome;
+const DEFAULT_API_URL = 'https://dipoma-ai-checker.onrender.com/api/check';
+
+function isLegacyLocalApiUrl(url) {
+  return typeof url === 'string' && /https?:\/\/(localhost|127\.0\.0\.1):8000\/api\/check/i.test(url.trim());
+}
 
 // Configuration
 let config = {
-  apiUrl: 'http://localhost:8000/api/check',
+  apiUrl: DEFAULT_API_URL,
   threshold: 0.15,
   enabled: true,
   checkedCount: 0,
@@ -85,6 +90,10 @@ async function loadSettings() {
   try {
     const settings = await browser_api.storage.sync.get(['apiUrl', 'threshold', 'enabled', 'checkedCount', 'blockedCount', 'toxicElements']);
     config.apiUrl = settings.apiUrl || config.apiUrl;
+    if (isLegacyLocalApiUrl(config.apiUrl)) {
+      config.apiUrl = DEFAULT_API_URL;
+      await browser_api.storage.sync.set({ apiUrl: config.apiUrl });
+    }
     config.threshold = settings.threshold !== undefined ? settings.threshold : config.threshold;
     config.enabled = settings.enabled !== undefined ? settings.enabled : config.enabled;
     config.checkedCount = settings.checkedCount || 0;

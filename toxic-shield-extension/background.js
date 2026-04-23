@@ -2,6 +2,11 @@
 
 // Firefox/Chrome compatibility
 const browser_api = typeof browser !== 'undefined' ? browser : chrome;
+const DEFAULT_API_URL = 'https://dipoma-ai-checker.onrender.com/api/check';
+
+function isLegacyLocalApiUrl(url) {
+  return typeof url === 'string' && /https?:\/\/(localhost|127\.0\.0\.1):8000\/api\/check/i.test(url.trim());
+}
 
 console.log('[ToxicShield Background] Service worker initialized');
 
@@ -32,7 +37,7 @@ browser_api.runtime.onInstalled.addListener((details) => {
     
     // Установка начальных настроек
     browser_api.storage.sync.set({
-      apiUrl: 'http://localhost:8000/api/check',
+      apiUrl: DEFAULT_API_URL,
       threshold: 0.15,
       enabled: true,
       checkedCount: 0,
@@ -45,6 +50,15 @@ browser_api.runtime.onInstalled.addListener((details) => {
   
   if (details.reason === 'update') {
     console.log('[ToxicShield Background] Extension updated');
+    browser_api.storage.sync.get(['apiUrl']).then((stored) => {
+      if (!stored.apiUrl || isLegacyLocalApiUrl(stored.apiUrl)) {
+        return browser_api.storage.sync.set({ apiUrl: DEFAULT_API_URL });
+      }
+
+      return null;
+    }).catch((error) => {
+      console.error('[ToxicShield Background] Failed to migrate API URL:', error);
+    });
   }
 });
 
